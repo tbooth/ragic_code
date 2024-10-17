@@ -1,0 +1,27 @@
+So, I have a run set up in Ragic under:
+
+https://eu3.ragic.com/edgen/sequencing/2/2?PAGEID=4ak
+
+I want to demonstrate that I can make a sample sheet from this.
+
+What do I need to do?
+
+1) Locate and fetch the correct sample sheet for flowcell DPPDH
+
+2) Generate the sample sheet with all the infos
+
+3) Wire this into sample_sheet_fetch.sh in the pipeline.
+
+4) Set the Run ID back into Ragic
+
+Coolio. Let's go.
+
+1) To use the API I need an API key. I'll not risk committing it to GIT.
+I saved it under ~/.ragic_api_key
+
+Now:
+
+$ curl https://eu3.ragic.com/edgen/sequencing/2/2 --get -d api -H "Authorization:Basic `cat ~/.ragic_api_key`"
+
+I need to do this from Python. Did I not have some code already?? Yes - under ~/scratch/ragic_project_lookup.py
+on Lustre. Cool.
