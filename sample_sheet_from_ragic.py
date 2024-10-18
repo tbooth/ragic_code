@@ -12,8 +12,6 @@ from aggregator import aggregator
 
 def main(args):
 
-    rc = RagicClient.connect_with_creds()
-
     if args.json_file:
         with open(args.json_file) as fh:
             run = json.load(fh)
@@ -23,22 +21,62 @@ def main(args):
                      f" not {args.flowcell_id}")
     else:
 
-        # Query a run by "Flowcell ID"
-        ir_form = "sequencing/2"    # Illumina Run
-        ir_field = "1000011"        # Flowcell ID field
+        run = get_ragic_run(args.flowcell_id)
 
-        query = f"{ir_field},eq,{args.flowcell_id}"
-        runs = rc.list_entries(ir_form, query)
-
-        L.debug("Found {len(runs)} record in Ragic.")
-        if not runs:
-            exit(f"No record of flowcell ID {args.flowcell_id}")
-
-        # If there are multiple runs, pick the one with the highest number
-        max_record_num = sorted(runs, key=lambda p: int(p))[-1]
-        run = runs[max_record_num]
+    if args.save:
+        jname = f"run_{run['Flowcell ID']}.json"
+        L.info(f"Saving out {jname!r}")
+        with open(jname, "w") as save_fh:
+            json.dump(run, save_fh)
 
     print(*gen_ss(run), sep="\n")
+
+# Lazy connect
+ragic_client = None
+def get_ragic_run(fcid):
+    """Query a run from Ragic by "Flowcell ID"
+    """
+    global ragic_client
+    if not ragic_client:
+        ragic_client = RagicClient.connect_with_creds()
+    rc = ragic_client
+
+    # Some constants. Still not sure if there is a way to introspect the field number to
+    # name mapping??
+    ir_form = "sequencing/2"    # Illumina Run
+    ir_field = "1000011"        # Flowcell ID field
+
+    proj_form = "sequencing/2"  # Sequencing Project
+    proj_field = "1000017"      # Project Name
+
+    query = f"{ir_field},eq,{args.flowcell_id}"
+    runs = rc.list_entries(ir_form, query)
+
+    L.debug("Found {len(runs)} record in Ragic.")
+    if not runs:
+        raise RuntimeError(f"No record of flowcell ID {args.flowcell_id}")
+
+    # If there are multiple runs, pick the one with the highest number
+    max_record_num = sorted(runs, key=lambda p: int(p))[-1]
+    run = runs[max_record_num]
+
+    # Now add the barcode info too. We'll fetch all barcodes for all projects,
+    # which seems simpler than going through the whole list of all libraries in
+    # all lanes.
+    run['Project__dict'] = {}
+    for proj in run['Project']:
+        pquery = f"{proj_field},eq,{proj}"
+        projects = rc.list_entries(proj_form, query)
+
+        # We should see exactly one. In this case, do not pick the highest, just refuse
+        # to add anything if there are multiple.
+        if len(projects) != 1:
+            L.warning(f"Project {proj} has {len(projects)} entries. Skipping.")
+            continue
+
+        run['Project__dict'][proj], = projects.values()
+
+    return run
 
 def mdydate():
     """Get today's date in silly mm/dd/yyyy format
@@ -94,8 +132,6 @@ def gen_ss(run):
                                                   fcid=run['Flowcell ID'] ):
             res(run_elem)
 
-    #with open(f"run_{run['Flowcell ID']}.json", "x") as fh:
-    #    json.dump(run, fh)
     return res
 
 def tabulate_lane(lane_num, lane, fcid, ):
@@ -140,6 +176,8 @@ def parse_args(*args):
                             help="The flowcell ID to look up.")
     argparser.add_argument("-j", "--json_file",
                             help="Load directly from JSON, skipping Ragic query.")
+    argparser.add_argument("--save", action="store_true",
+                            help="Save out the JSON from Ragic as run_{FCID}.json")
 
     return argparser.parse_args(*args)
 
