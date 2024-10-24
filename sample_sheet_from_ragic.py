@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+# ***                                                                 ***
+# *** Note - the definitive version of this is now under Illuminatus. ***
+# ***                                                                 ***
+
 import os, sys, re
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 import logging as L
@@ -43,11 +47,11 @@ def get_ragic_run(fcid):
 
     # Some constants. Still not sure if there is a way to introspect the field number to
     # name mapping??
-    ir_form = "sequencing/2"    # Illumina Run
+    ir_form  = "sequencing/2"   # Illumina Run
     ir_field = "1000011"        # Flowcell ID field
 
-    proj_form = "sequencing/2"  # Sequencing Project
-    proj_field = "1000017"      # Project Name
+    samp_form  = "sequencing/3" # List of samples, sub-form of Sequencing Project
+    proj_field = "1000003"      # Project Name
 
     query = f"{ir_field},eq,{args.flowcell_id}"
     runs = rc.list_entries(ir_form, query)
@@ -63,18 +67,11 @@ def get_ragic_run(fcid):
     # Now add the barcode info too. We'll fetch all barcodes for all projects,
     # which seems simpler than going through the whole list of all libraries in
     # all lanes.
-    run['Project__dict'] = {}
-    for proj in run['Project']:
-        pquery = f"{proj_field},eq,{proj}"
-        projects = rc.list_entries(proj_form, query)
+    squery = [ f"{proj_field},eq,{proj}" for proj in run['Project'] ]
+    squery_result = rc.list_entries(samp_form, squery)
 
-        # We should see exactly one. In this case, do not pick the highest, just refuse
-        # to add anything if there are multiple.
-        if len(projects) != 1:
-            L.warning(f"Project {proj} has {len(projects)} entries. Skipping.")
-            continue
-
-        run['Project__dict'][proj], = projects.values()
+    # This will yield a dict keyed off row IDs, so re-key it by 'LibName'
+    run['Samples__dict'] = { v['LibName']: v for v in squery_result.values() }
 
     return run
 
@@ -100,7 +97,6 @@ def gen_ss(run):
     res( "Application", "FASTQ Only" )
     #res( "Assay", "TruSeq DNA" )
     res( "Chemistry", run['Chemistry'])
-    res( *( ["#index_revcomp"] + [run[f'Lane {n} index revcomp'] for n in "1234"] ) )
 
     # Read lengths
     res()
@@ -116,6 +112,7 @@ def gen_ss(run):
     # My special bcl2fastq stuff
     res()
     res( "[bcl2fastq]" )
+    res( *( ["#index_revcomp"] + [run[f'Lane {n} index revcomp'] for n in "1234"] ) )
 
     # There may be a neater way to do this but the lanes correspond to the subtables,
     # and I think I can just assume the keys are in order, or else maybe I order on
@@ -128,13 +125,15 @@ def gen_ss(run):
          "Sample_Project", "I5_Index_ID", "index", "I7_Index_ID", "index2",
          "Description" )
     for lane_idx, lane_key in enumerate(lane_keys):
-        for run_elem in tabulate_lane(lane_idx+1, lane=run[lane_key],
-                                                  fcid=run['Flowcell ID'] ):
+        for run_elem in tabulate_lane( lane_num = lane_idx + 1,
+                                       lane = run[lane_key],
+                                       samples_dict = run['Samples__dict'],
+                                       fcid = run['Flowcell ID'] ):
             res(run_elem)
 
     return res
 
-def tabulate_lane(lane_num, lane, fcid, ):
+def tabulate_lane(lane_num, lane, samples_dict, fcid):
     """lane_num is the lane number (lane_idx+1)
        lane is a subtable dict from the Ragic record
     """
@@ -142,6 +141,8 @@ def tabulate_lane(lane_num, lane, fcid, ):
 
     # The items are keyed by unpadded integers-as-strings, so I need to do
     # a special numerical sort.
+    # FIXME - likely I should sort by library name, regardless of the order
+    # in the sub-table
     run_elem_keys = sorted(lane, key=lambda k: int(k))
 
     for k in run_elem_keys:
@@ -149,8 +150,10 @@ def tabulate_lane(lane_num, lane, fcid, ):
         proj = rel['Library'][0:5]
         pool = rel['Pool'] or 'NoPool'
 
-        index1 = "AAAAA"
-        index2 = "TTTTT"
+        # Find the indexes. Index2 might be empty.
+        sample_dict = samples_dict[rel['Library']]
+        index1 = sample_dict['Index1']
+        index2 = sample_dict['Index2']
 
         res( lane_num,
              f"{pool}__{rel['Library']}",

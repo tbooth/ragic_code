@@ -6,7 +6,7 @@ import configparser
 import json
 from pprint import pprint
 
-# Basi client for the Ragic API - see
+# Basic client for the Ragic API - see
 # https://github.com/ragic/public/blob/master/HTTP%20API%20Sample/Python-Sample/read.py
 
 class RequestError(RuntimeError):
@@ -70,7 +70,7 @@ class RagicClient:
         host = mo.group(1)
         path = mo.group(2)
 
-        params = urllib.parse.urlencode(params)
+        params = urllib.parse.urlencode(params, doseq=True)
 
         try:
             conn = http.client.HTTPSConnection(host, timeout=self.http_timeout)
