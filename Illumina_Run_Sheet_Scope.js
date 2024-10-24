@@ -45,6 +45,12 @@ var ILLUMINA_RUN = { "_path":  "/sequencing/2",
                      "_id":    1000014,
                      "project" 1000020 };
 
+var LIST_OF_SAMPLES = { "_path": "/sequencing/3",
+                        "Project Name":  1000003,
+                        "Sample ID":     1000004,
+                        "Lib Name":      1000021,
+                        "Def Pool Name": 1000051 };
+
 // TODO - I can make this data structure a lot neater!
 var LANE_SUBTABLES = { "Lane 1": {"_id":     1000015,
                                   "Pool":    1000024,
@@ -116,7 +122,9 @@ function scan_lanes(record_id){
 }
 
 function add_pool(record_id){
-  // This is now moved to a post update action.
+  //
+  // DELETEME - This is now being implemented in illumina_run_poolman()
+  //
   
   /* We need debugging messages */
   log.setToConsole(true); // Display the console block
@@ -154,6 +162,38 @@ function clear_all(record_id){
   
 }
 
+function pools_for_projects(projects_list){
+    /* For each projects in projects_list,
+       get all the samples (libraries) for the project and build a data structure like this
+       
+       { project1: { pool1: size,
+                     pool2: size},
+         project2: { pool1: size,
+                     pool2: size}, ... }
+    */
+  	var res = {};
+  
+    // Strategy here is to make a single query for all samples.
+	var sample_query = db.getAPIQuery(LIST_OF_SAMPLES["_path"]);
+    for (var i=0; i < projects_list.length; i++){
+  		sample_query.addFilter(LIST_OF_SAMPLES["Project Name"], '=', projects_list[i]);
+    }
+	var sample_entries = sample_query.getAPIResultsFull();
+    var asample = sample_entries.next()
+    while(asample){
+      
+      asample_project = entry.getFieldValue(LIST_OF_SAMPLES["Project Name"]);
+      asample_pool = entry.getFieldValue(LIST_OF_SAMPLES["Def Pool Name"]);
+      
+      if(!res[asample_project]) res[asample_project] = {};
+      res[asample_project][asample_pool] = (res[asample_project][asample_pool] || 0) + 1;
+      
+      asample = sample_entries.next();
+    }
+  
+    return res;
+}
+  
 function illumina_run_poolman(){
   
   	/* This function implements the "Add pools to lanes" feature, by looking
@@ -183,10 +223,14 @@ function illumina_run_poolman(){
     // 3 - re-generate the pools table
     // TODO - is there any need to avoid the update if nothing has changed? It's probably
     // a good idea.
+   
+  	var pools_list = pools_for_projects(projects_in_run);
+  
   
 	var all_pools_subtable = param.getSubtableEntry(1000056);
   	log.println(all_pools_subtable);
   
+    /* DELETEME
     for(var i=0; i < all_pools_subtable.length; i++){
       	log.println(all_pools_subtable[i].getOldValue(1000052));
        	log.println(all_pools_subtable[i].getNewValue(1000052));
@@ -200,5 +244,8 @@ function illumina_run_poolman(){
 	var entry = query.getAPIEntry(param.getNewNodeId(1000014));
 	var subtableSize = entry.getSubtableSize(1000036);
     log.println("Lane 4 has " + subtableSize + " entries");
+    */
 }
+
+
 
