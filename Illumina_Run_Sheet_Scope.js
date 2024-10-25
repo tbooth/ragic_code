@@ -210,33 +210,78 @@ function select_to_lanes(select_val){
     return [];
 }
 
-function add_pool_to_lane(run_entry, pool_project, pool_name, expected_size, lane_name){
+function is_in_list(x, alist){
+    /* See if x is present in array alist.
+       I'm likely recreating something that already exists, but never mind.
+    */
+    for (var i=0; i < alist.length; i++){
+      	if(alist[i] == x) return true;
+    }
+    return false;
+}
+
+function add_pool_to_lane(run_entry, pool_project, pool_name, expected_size, lane_name, new_row_idx){
 	/* Adds a specified pool to a specified lane.
    
        1 - Fetch the list of libraries in the specified pool.
        2 - Sanity check the pool size matches
-       3 - Sanity check the project is still in the list (maybe the caller needs to do this?)
-       4 - Sanity check adding a pool twice
+       3 - Sanity check the project is still in the list of projects for this run
+       4 - Sanity check adding a sample twice
+       5 - I we good, add the libraries to the actual subtable
     */
   	var lane_subtable = LANE_SUBTABLES[lane_name];
     var lane_subtable_len = run_entry.getSubtableSize(lane_subtable["_id"]);
     
+    // 1 looks very similar to pools_for_projects.
+    var pool_libraries = [];
+  	var sample_query = db.getAPIQuery(LIST_OF_SAMPLES["_path"]);
+	sample_query.addFilter(LIST_OF_SAMPLES["Project Name"], '=', pool_project);
+    sample_query.addFilter(LIST_OF_SAMPLES["Def Pool Name"], '=', pool_name);
+	var sample_entries = sample_query.getAPIResultsFull();
+    var asample = sample_entries.next()
+    while(asample){
+		// We only need to get the library names and add them to the array
+        pool_libraries.push(asample.getFieldValue(LIST_OF_SAMPLES["Lib Name"]));
+
+    	asample = sample_entries.next();
+    }
+
+    // 2
+    if(pool_libraries.length != expected_size){
+       throw "Expected to retrieve " + expected_size + " libraries, but got " + pool_libraries.length + "\n";
+    }
   
 	// 3
     var projects_in_run = run_entry.getFieldValues(ILLUMINA_RUN["Project"]);
-    var found_in_list = false;
-    for (var i=0; i < projects_in_run.length; i++){
-      	found_in_list = found_in_list || (projects_in_run[i] == pool_project);
-    }
-    if(!found_in_list){
+    if(!is_in_list(pool_project, projects_in_run)){
         // This is more of a sanity check than anything.
      	throw "Adding pool " + pool_name + " from " + pool_project + ", but that project is not selected.\n"; 
     }
   
     // 4
     for(var rownum=0; rownum<lane_subtable_len; rownum++){
-    	row_idx = run_entry.getSubtableRootNodeId(POOL_SUBTABLE["_id"], rownum);
-  	
+    	row_idx = run_entry.getSubtableRootNodeId(lane_subtable["_id"], rownum);
+      
+        row_library = run_entry.getSubtableFieldValue(lane_subtable["Library"]);
+        
+      	if is_in_list(row_library, pool_libraries){
+         	throw "Trying to add " + row_library + " to " + lane name + "but it is already there.\n";
+        }
+    }
+  
+    // 5 looks similar to the pool updater loop in illumina_run_poolman
+    for (var i=0; i<pool_libraries.length; i++){
+        var pool_library = pool_libraries[i];
+
+        run_entry.setSubtableFieldValue(lane_subtable["Pool"],    new_row_idx, pool_name);
+        run_entry.setSubtableFieldValue(lane_subtable["Library"], new_row_idx, pool_library);
+        
+        new_row_idx -= 1;
+    }
+  
+  	// We need to ensure that new_row_idx does not clash if we add multiple pools to a lane,
+    // so return the next available value.
+    return new_row_idx;
 }
 
 function illumina_run_poolman(){
@@ -256,6 +301,7 @@ function illumina_run_poolman(){
 
     // 2 - add selected pools to lanes
     var pools_added = 0;
+    var next_inserion_idx = -1; // We need to ensure the index of added rows is unique.
     for(var rownum=0; rownum<pool_subtable_len; rownum++){
     	row_idx = run_entry.getSubtableRootNodeId(POOL_SUBTABLE["_id"], rownum);
       
@@ -266,7 +312,7 @@ function illumina_run_poolman(){
       
         // Add this pool to the lanes. In most cases row_select will be [] and nothing will happen.
         for(var selectidx=0; selectidx<row_select.length; selectidx++){
-        	add_pool_to_lane(row_project, row_pool_name, row_pool_size, row_select[selectidx]);
+        	next_insertion_idx = add_pool_to_lane(run_entry, row_project, row_pool_name, row_pool_size, row_select[selectidx], next_insertion_idx);
             pools_added += 1;
         }
     }
@@ -278,7 +324,7 @@ function illumina_run_poolman(){
        total_new_entries += pools_list[aproject_name].length;
     }
   
-    /*
+    /* DELETEME
     // At this point I may need to debug pools_for_projects():
     log.println("Dumping projects_in_run...");
     log.println(JSON.stringify(projects_in_run));
