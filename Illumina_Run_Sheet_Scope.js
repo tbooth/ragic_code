@@ -41,17 +41,16 @@
 
  */
 
-var ILLUMINA_RUN = { "_path":  "/sequencing/2",
-                     "_id":    1000014,
-                     "project" 1000020 };
+var ILLUMINA_RUN = { "_path":   "/sequencing/2",
+                     "_id":     1000014,
+                     "Project": 1000020 };
 
-var LIST_OF_SAMPLES = { "_path": "/sequencing/3",
+var LIST_OF_SAMPLES = { "_path":         "/sequencing/3",
                         "Project Name":  1000003,
                         "Sample ID":     1000004,
                         "Lib Name":      1000021,
                         "Def Pool Name": 1000051 };
 
-// TODO - I can make this data structure a lot neater!
 var LANE_SUBTABLES = { "Lane 1": {"_id":     1000015,
                                   "Pool":    1000024,
                                   "Library": 1000013},
@@ -69,7 +68,9 @@ var POOL_SUBTABLE = { "_id": 1000056,
                       "Project": 1000052,
                       "Pool": 1000053,
                       "Samples in Pool": 1000054,
-                      "Add to Lane": 1000055 }
+                      "Add to Lane": 1000055,
+                      "Select": 1000056,
+                      "Select-label": "Select..."}
 
 
 function scan_lanes(record_id){
@@ -176,14 +177,15 @@ function pools_for_projects(projects_list){
     // Strategy here is to make a single query for all samples.
 	var sample_query = db.getAPIQuery(LIST_OF_SAMPLES["_path"]);
     for (var i=0; i < projects_list.length; i++){
+        log.println("Adding filter: " + LIST_OF_SAMPLES["Project Name"] + "=" + projects_list[i]);
   		sample_query.addFilter(LIST_OF_SAMPLES["Project Name"], '=', projects_list[i]);
     }
 	var sample_entries = sample_query.getAPIResultsFull();
     var asample = sample_entries.next()
     while(asample){
       
-      asample_project = entry.getFieldValue(LIST_OF_SAMPLES["Project Name"]);
-      asample_pool = entry.getFieldValue(LIST_OF_SAMPLES["Def Pool Name"]);
+      asample_project = asample.getFieldValue(LIST_OF_SAMPLES["Project Name"]);
+      asample_pool = asample.getFieldValue(LIST_OF_SAMPLES["Def Pool Name"]);
       
       if(!res[asample_project]) res[asample_project] = {};
       res[asample_project][asample_pool] = (res[asample_project][asample_pool] || 0) + 1;
@@ -206,13 +208,9 @@ function illumina_run_poolman(){
     */
 
   	// 1 - get the just-saved record
-    // Version in the example code:
-    //var run_query = db.getAPIQuery(ILLUMINA_RUN["_path"]);
-    //var run_entry = query.getAPIEntry(param.getNewNodeId(ILLUMINA_RUN["_id"]));
-    // Easier version!
     var run_entry = param.getUpdatedEntry();
-  
-    var projects_in_run = param.getNewValues(ILLUMINA_RUN["Project"]);
+    var projects_in_run = run_entry.getFieldValues(ILLUMINA_RUN["Project"]);
+
   
     // 2 - add selected pools to lanes 
     // TODO TODO TODO
@@ -220,32 +218,80 @@ function illumina_run_poolman(){
     // Sanity check the project is still in the list
     // Sanity check adding a pool twice
    
-    // 3 - re-generate the pools table
-    // TODO - is there any need to avoid the update if nothing has changed? It's probably
-    // a good idea.
-   
+    // 3 - re-generate the pools table   
   	var pools_list = pools_for_projects(projects_in_run);
-  
-  
-	var all_pools_subtable = param.getSubtableEntry(1000056);
-  	log.println(all_pools_subtable);
-  
-    /* DELETEME
-    for(var i=0; i < all_pools_subtable.length; i++){
-      	log.println(all_pools_subtable[i].getOldValue(1000052));
-       	log.println(all_pools_subtable[i].getNewValue(1000052));
-        log.println(all_pools_subtable[i].getOldNodeId(1000052));
-        log.println(all_pools_subtable[i].getNewNodeId(1000052));
+    var total_new_entries = 0;
+	for (var aproject_name in pools_list){
+       total_new_entries += pools_list[aproject_name].length;
     }
   
-    // I think trying to get the record for the NewNodeId will fail as it is not saved yet?
-    var query = db.getAPIQuery(ILLUMINA_RUN);
-
-	var entry = query.getAPIEntry(param.getNewNodeId(1000014));
-	var subtableSize = entry.getSubtableSize(1000036);
-    log.println("Lane 4 has " + subtableSize + " entries");
+    /*
+    // At this point I may need to debug pools_for_projects():
+    log.println("Dumping projects_in_run...");
+    log.println(JSON.stringify(projects_in_run));
+    log.println("Dumping pools_list...");
+    log.println(JSON.stringify(pools_list));
+    log.println("and quitting...");
+    return;
     */
+  
+    // Is there any need to avoid the update if nothing has changed? It's probably
+    // a good idea. So do it.
+    var pools_updated = false;
+    var total_old_entries = run_entry.getSubtableSize(POOL_SUBTABLE["_id"]);
+  
+  	if(total_new_entries != total_old_entries){
+        // Clearly there is a change.
+        pools_updated = true;
+    }else{
+        var old_rownum = 0;
+      
+    	// We need to scan for changes.
+        for (var aproject_name in pools_list){
+            var aproject_pools = pools_list[aproject_name];
+
+            for (var apool_name in aproject_pools){
+                var apool_size = aproject_pools[apool_name];
+
+                old_row_idx = run_entry.getSubtableRootNodeId(POOL_SUBTABLE["_id"], old_rownum);
+
+                // What happens if I hit the blank lines at the end? Doesn't matter, since I
+                // did the explicit size check above. Check all four fields so we pick up selection
+                // changes too.
+                pools_updated = pools_updated || (
+                		run_entry.getSubtableFieldValue(POOL_SUBTABLE["Project"], old_row_idx) != aproject_name ||
+	                	run_entry.getSubtableFieldValue(POOL_SUBTABLE["Pool"], old_row_idx) != apool_name ||
+                		run_entry.getSubtableFieldValue(POOL_SUBTABLE["Samples in Pool"], old_row_idx) != apool_size ||
+	                	run_entry.getSubtableFieldValue(POOL_SUBTABLE["Select"], old_row_idx) != POOL_SUBTABLE["Select-label"]
+                    );
+              
+                old_rownum += 1;
+            }
+        }
+    }    
+    
+    if(pools_updated){
+        run_entry.deleteSubtableRowAll(POOL_SUBTABLE["_id"]);
+        var new_row_idx = -1; //I think this adds rows in the right order??
+        for (var aproject_name in pools_list){
+            var aproject_pools = pools_list[aproject_name];
+
+            for (var apool_name in aproject_pools){
+                var apool_size = aproject_pools[apool_name];
+
+                run_entry.setSubtableFieldValue(POOL_SUBTABLE["Project"],         new_row_idx, aproject_name);
+                run_entry.setSubtableFieldValue(POOL_SUBTABLE["Pool"],            new_row_idx, apool_name); 
+                run_entry.setSubtableFieldValue(POOL_SUBTABLE["Samples in Pool"], new_row_idx, apool_size);
+                run_entry.setSubtableFieldValue(POOL_SUBTABLE["Select"],          new_row_idx, POOL_SUBTABLE["Select-label"]);
+
+                new_row_idx -= 1;
+            }
+        }
+        log.println("Added all pools and new_row_idx is " + new_row_idx);
+
+        run_entry.save(); 
+    }else{
+      	log.println("Not re-generating the pools table as nothing has changed.");
+    }
 }
-
-
 
