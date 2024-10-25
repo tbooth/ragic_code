@@ -187,7 +187,7 @@ function pools_for_projects(projects_list){
       asample_project = asample.getFieldValue(LIST_OF_SAMPLES["Project Name"]);
       asample_pool = asample.getFieldValue(LIST_OF_SAMPLES["Def Pool Name"]);
       
-      if(!res[asample_project]) res[asample_project] = {};
+      if(!res[asample_project]) res[asample_project] = {}; 
       res[asample_project][asample_pool] = (res[asample_project][asample_pool] || 0) + 1;
       
       asample = sample_entries.next();
@@ -200,10 +200,10 @@ function select_to_lanes(select_val){
  	/* Translates one of the dropdown values in the Add Pools subtable into a
        list of lanes into which the pool should be added. Always returns an array.
     */
-    if select_val = "All Lanes"){
+    if(select_val == "All Lanes"){
       	return Object.keys(LANE_SUBTABLES);
     }
-  	elif(select_val.substring(0,5) == "Lane "){
+  	else if(select_val.substring(0,5) == "Lane "){
   		return [select_val];
 	}
     // Else, nothing to do.
@@ -259,13 +259,11 @@ function add_pool_to_lane(run_entry, pool_project, pool_name, expected_size, lan
     }
   
     // 4
-    for(var rownum=0; rownum<lane_subtable_len; rownum++){
-    	row_idx = run_entry.getSubtableRootNodeId(lane_subtable["_id"], rownum);
-      
-        row_library = run_entry.getSubtableFieldValue(lane_subtable["Library"]);
+    for(var row_idx=0; rownum<lane_subtable_len; row_idx++){
+        row_library = run_entry.getSubtableFieldValue(lane_subtable["_id"], row_idx, lane_subtable["Library"]);
         
-      	if is_in_list(row_library, pool_libraries){
-         	throw "Trying to add " + row_library + " to " + lane name + "but it is already there.\n";
+      	if(is_in_list(row_library, pool_libraries)){
+         	throw "Trying to add " + row_library + " to " + lane_name + "but it is already there.\n";
         }
     }
   
@@ -302,13 +300,12 @@ function illumina_run_poolman(){
     // 2 - add selected pools to lanes
     var pools_added = 0;
     var next_inserion_idx = -1; // We need to ensure the index of added rows is unique.
-    for(var rownum=0; rownum<pool_subtable_len; rownum++){
-    	row_idx = run_entry.getSubtableRootNodeId(POOL_SUBTABLE["_id"], rownum);
+    for(var row_idx=0; row_idx<pool_subtable_len; row_idx++){
       
-        row_project = run_entry.getSubtableFieldValue(POOL_SUBTABLE["Project"], row_idx);
-        row_pool_name = run_entry.getSubtableFieldValue(POOL_SUBTABLE["Pool"], row_idx);
-        row_pool_size = run_entry.getSubtableFieldValue(POOL_SUBTABLE["Samples in Pool"], row_idx);
-      	row_select = select_to_lanes(run_entry.getSubtableFieldValue(POOL_SUBTABLE["Select"], old_row_idx));
+        row_project = run_entry.getSubtableFieldValue(POOL_SUBTABLE["_id"], row_idx, POOL_SUBTABLE["Project"]);
+        row_pool_name = run_entry.getSubtableFieldValue(POOL_SUBTABLE["_id"], row_idx, POOL_SUBTABLE["Pool"]);
+        row_pool_size = run_entry.getSubtableFieldValue(POOL_SUBTABLE["_id"], row_idx, POOL_SUBTABLE["Samples in Pool"]);
+      	row_select = select_to_lanes(run_entry.getSubtableFieldValue(POOL_SUBTABLE["_id"], row_idx, POOL_SUBTABLE["Select"]));
       
         // Add this pool to the lanes. In most cases row_select will be [] and nothing will happen.
         for(var selectidx=0; selectidx<row_select.length; selectidx++){
@@ -342,7 +339,7 @@ function illumina_run_poolman(){
         // Clearly there is a change.
         pools_updated = true;
     }else{
-        var old_rownum = 0;
+        var old_row_idx = 0;
       
     	// We need to scan for changes.
         for (var aproject_name in pools_list){
@@ -351,19 +348,19 @@ function illumina_run_poolman(){
             for (var apool_name in aproject_pools){
                 var apool_size = aproject_pools[apool_name];
 
-                old_row_idx = run_entry.getSubtableRootNodeId(POOL_SUBTABLE["_id"], old_rownum);
+              	// Note - When querying (as opposed to updating) we only need the rown number, not the node_id
 
                 // What happens if I hit the blank lines at the end? Doesn't matter, since I
                 // did the explicit size check above. Check all four fields so we pick up selection
                 // changes too.
                 pools_updated = pools_updated || (
-                		run_entry.getSubtableFieldValue(POOL_SUBTABLE["Project"], old_row_idx) != aproject_name ||
-	                	run_entry.getSubtableFieldValue(POOL_SUBTABLE["Pool"], old_row_idx) != apool_name ||
-                		run_entry.getSubtableFieldValue(POOL_SUBTABLE["Samples in Pool"], old_row_idx) != apool_size ||
-	                	run_entry.getSubtableFieldValue(POOL_SUBTABLE["Select"], old_row_idx) != POOL_SUBTABLE["Select-label"]
+                		run_entry.getSubtableFieldValue(POOL_SUBTABLE["_id"], old_row_idx, POOL_SUBTABLE["Project"]) != aproject_name ||
+	                	run_entry.getSubtableFieldValue(POOL_SUBTABLE["_id"], old_row_idx, POOL_SUBTABLE["Pool"]) != apool_name ||
+                		run_entry.getSubtableFieldValue(POOL_SUBTABLE["_id"], old_row_idx, POOL_SUBTABLE["Samples in Pool"]) != apool_size ||
+	                	run_entry.getSubtableFieldValue(POOL_SUBTABLE["_id"], old_row_idx, POOL_SUBTABLE["Select"]) != POOL_SUBTABLE["Select-label"]
                     );
               
-                old_rownum += 1;
+                old_row_idx += 1;
             }
         }
     }    
@@ -393,4 +390,3 @@ function illumina_run_poolman(){
       	log.println("Not re-generating the pools table as nothing has changed.");
     }
 }
-
