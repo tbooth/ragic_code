@@ -68,8 +68,7 @@ var POOL_SUBTABLE = { "_id": 1000056,
                       "Project": 1000052,
                       "Pool": 1000053,
                       "Samples in Pool": 1000054,
-                      "Add to Lane": 1000055,
-                      "Select": 1000056,
+                      "Select": 1000055, // Aka "Add to Lane"
                       "Select-label": "Select..."}
 
 
@@ -193,6 +192,7 @@ function pools_for_projects(projects_list){
       asample = sample_entries.next();
     }
   
+    log.println("pools_for_projects returning:" + JSON.stringify(res));
     return res;
 }
 
@@ -259,17 +259,19 @@ function add_pool_to_lane(run_entry, pool_project, pool_name, expected_size, lan
     }
   
     // 4
-    for(var row_idx=0; rownum<lane_subtable_len; row_idx++){
+    for(var row_idx=0; row_idx<lane_subtable_len; row_idx++){
         row_library = run_entry.getSubtableFieldValue(lane_subtable["_id"], row_idx, lane_subtable["Library"]);
         
       	if(is_in_list(row_library, pool_libraries)){
-         	throw "Trying to add " + row_library + " to " + lane_name + "but it is already there.\n";
+         	throw "Trying to add " + row_library + " to " + lane_name + ", but it is already there.\n";
         }
     }
   
     // 5 looks similar to the pool updater loop in illumina_run_poolman
     for (var i=0; i<pool_libraries.length; i++){
-        var pool_library = pool_libraries[i];
+        // As usual, add the items in reversed order to get them in the expected order.
+        var _i = pool_libraries.length-(i+1);
+        var pool_library = pool_libraries[_i];
 
         run_entry.setSubtableFieldValue(lane_subtable["Pool"],    new_row_idx, pool_name);
         run_entry.setSubtableFieldValue(lane_subtable["Library"], new_row_idx, pool_library);
@@ -299,13 +301,14 @@ function illumina_run_poolman(){
 
     // 2 - add selected pools to lanes
     var pools_added = 0;
-    var next_inserion_idx = -1; // We need to ensure the index of added rows is unique.
+    var next_insertion_idx = -1; // We need to ensure the index of added rows is unique.
     for(var row_idx=0; row_idx<pool_subtable_len; row_idx++){
+        var _row_idx = pool_subtable_len - (row_idx+1); // Traverse in reverse.
       
-        row_project = run_entry.getSubtableFieldValue(POOL_SUBTABLE["_id"], row_idx, POOL_SUBTABLE["Project"]);
-        row_pool_name = run_entry.getSubtableFieldValue(POOL_SUBTABLE["_id"], row_idx, POOL_SUBTABLE["Pool"]);
-        row_pool_size = run_entry.getSubtableFieldValue(POOL_SUBTABLE["_id"], row_idx, POOL_SUBTABLE["Samples in Pool"]);
-      	row_select = select_to_lanes(run_entry.getSubtableFieldValue(POOL_SUBTABLE["_id"], row_idx, POOL_SUBTABLE["Select"]));
+        row_project = run_entry.getSubtableFieldValue(POOL_SUBTABLE["_id"], _row_idx, POOL_SUBTABLE["Project"]);
+        row_pool_name = run_entry.getSubtableFieldValue(POOL_SUBTABLE["_id"], _row_idx, POOL_SUBTABLE["Pool"]);
+        row_pool_size = run_entry.getSubtableFieldValue(POOL_SUBTABLE["_id"], _row_idx, POOL_SUBTABLE["Samples in Pool"]);
+      	row_select = select_to_lanes(run_entry.getSubtableFieldValue(POOL_SUBTABLE["_id"], _row_idx, POOL_SUBTABLE["Select"]));
       
         // Add this pool to the lanes. In most cases row_select will be [] and nothing will happen.
         for(var selectidx=0; selectidx<row_select.length; selectidx++){
@@ -318,8 +321,10 @@ function illumina_run_poolman(){
   	var pools_list = pools_for_projects(projects_in_run);
     var total_new_entries = 0;
 	for (var aproject_name in pools_list){
-       total_new_entries += pools_list[aproject_name].length;
+       total_new_entries += Object.keys(pools_list[aproject_name]).length;
     }
+  
+  	log.println("Loaded info about " + total_new_entries + " pools");
   
     /* DELETEME
     // At this point I may need to debug pools_for_projects():
@@ -368,7 +373,7 @@ function illumina_run_poolman(){
     if(pools_updated){
         // No reason not to clear and re-add everything.
         run_entry.deleteSubtableRowAll(POOL_SUBTABLE["_id"]);
-        var new_row_idx = -1; //I think this adds rows in the right order??
+        var new_row_idx = 0-total_new_entries; // This adds rows in the right order??
         for (var aproject_name in pools_list){
             var aproject_pools = pools_list[aproject_name];
 
@@ -380,10 +385,10 @@ function illumina_run_poolman(){
                 run_entry.setSubtableFieldValue(POOL_SUBTABLE["Samples in Pool"], new_row_idx, apool_size);
                 run_entry.setSubtableFieldValue(POOL_SUBTABLE["Select"],          new_row_idx, POOL_SUBTABLE["Select-label"]);
 
-                new_row_idx -= 1;
+                new_row_idx += 1;
             }
         }
-        log.println("Added all pools and new_row_idx is " + new_row_idx);
+        log.println("Added " + total_new_entries + " pools and new_row_idx is " + new_row_idx + " (should be always 0)");
 
         run_entry.save(); 
     }else{
