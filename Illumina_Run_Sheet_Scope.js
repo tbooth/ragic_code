@@ -195,9 +195,51 @@ function pools_for_projects(projects_list){
   
     return res;
 }
+
+function select_to_lanes(select_val){
+ 	/* Translates one of the dropdown values in the Add Pools subtable into a
+       list of lanes into which the pool should be added. Always returns an array.
+    */
+    if select_val = "All Lanes"){
+      	return Object.keys(LANE_SUBTABLES);
+    }
+  	elif(select_val.substring(0,5) == "Lane "){
+  		return [select_val];
+	}
+    // Else, nothing to do.
+    return [];
+}
+
+function add_pool_to_lane(run_entry, pool_project, pool_name, expected_size, lane_name){
+	/* Adds a specified pool to a specified lane.
+   
+       1 - Fetch the list of libraries in the specified pool.
+       2 - Sanity check the pool size matches
+       3 - Sanity check the project is still in the list (maybe the caller needs to do this?)
+       4 - Sanity check adding a pool twice
+    */
+  	var lane_subtable = LANE_SUBTABLES[lane_name];
+    var lane_subtable_len = run_entry.getSubtableSize(lane_subtable["_id"]);
+    
   
+	// 3
+    var projects_in_run = run_entry.getFieldValues(ILLUMINA_RUN["Project"]);
+    var found_in_list = false;
+    for (var i=0; i < projects_in_run.length; i++){
+      	found_in_list = found_in_list || (projects_in_run[i] == pool_project);
+    }
+    if(!found_in_list){
+        // This is more of a sanity check than anything.
+     	throw "Adding pool " + pool_name + " from " + pool_project + ", but that project is not selected.\n"; 
+    }
+  
+    // 4
+    for(var rownum=0; rownum<lane_subtable_len; rownum++){
+    	row_idx = run_entry.getSubtableRootNodeId(POOL_SUBTABLE["_id"], rownum);
+  	
+}
+
 function illumina_run_poolman(){
-  
   	/* This function implements the "Add pools to lanes" feature, by looking
        to see which (if any) pools were selected and adding them to the appropriate
        lanes.
@@ -210,14 +252,25 @@ function illumina_run_poolman(){
   	// 1 - get the just-saved record
     var run_entry = param.getUpdatedEntry();
     var projects_in_run = run_entry.getFieldValues(ILLUMINA_RUN["Project"]);
+    var pool_subtable_len = run_entry.getSubtableSize(POOL_SUBTABLE["_id"]);
 
+    // 2 - add selected pools to lanes
+    var pools_added = 0;
+    for(var rownum=0; rownum<pool_subtable_len; rownum++){
+    	row_idx = run_entry.getSubtableRootNodeId(POOL_SUBTABLE["_id"], rownum);
+      
+        row_project = run_entry.getSubtableFieldValue(POOL_SUBTABLE["Project"], row_idx);
+        row_pool_name = run_entry.getSubtableFieldValue(POOL_SUBTABLE["Pool"], row_idx);
+        row_pool_size = run_entry.getSubtableFieldValue(POOL_SUBTABLE["Samples in Pool"], row_idx);
+      	row_select = select_to_lanes(run_entry.getSubtableFieldValue(POOL_SUBTABLE["Select"], old_row_idx));
+      
+        // Add this pool to the lanes. In most cases row_select will be [] and nothing will happen.
+        for(var selectidx=0; selectidx<row_select.length; selectidx++){
+        	add_pool_to_lane(row_project, row_pool_name, row_pool_size, row_select[selectidx]);
+            pools_added += 1;
+        }
+    }
   
-    // 2 - add selected pools to lanes 
-    // TODO TODO TODO
-    // Sanity check the pool size matches
-    // Sanity check the project is still in the list
-    // Sanity check adding a pool twice
-   
     // 3 - re-generate the pools table   
   	var pools_list = pools_for_projects(projects_in_run);
     var total_new_entries = 0;
@@ -238,9 +291,8 @@ function illumina_run_poolman(){
     // Is there any need to avoid the update if nothing has changed? It's probably
     // a good idea. So do it.
     var pools_updated = false;
-    var total_old_entries = run_entry.getSubtableSize(POOL_SUBTABLE["_id"]);
-  
-  	if(total_new_entries != total_old_entries){
+
+  	if(total_new_entries != pool_subtable_len){
         // Clearly there is a change.
         pools_updated = true;
     }else{
@@ -271,6 +323,7 @@ function illumina_run_poolman(){
     }    
     
     if(pools_updated){
+        // No reason not to clear and re-add everything.
         run_entry.deleteSubtableRowAll(POOL_SUBTABLE["_id"]);
         var new_row_idx = -1; //I think this adds rows in the right order??
         for (var aproject_name in pools_list){
