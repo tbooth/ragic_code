@@ -1,6 +1,5 @@
 /**
-
- * This comment is auto generated on 2024/10/23 11:29:59, and it reflects the field definition at this given time.
+ * This comment is auto generated on 2024/10/24 14:39:18, and it reflects the field definition at this given time.
  * If you need the current field definitions for your database, please go to "Start" => "Account Setup" => "DB Maintenance" => "Download Data Dictionary"
 
  * AP_Name:edgen
@@ -14,6 +13,8 @@
 
  * Pool subtable key: 1000036
 
+ * Project subtable key: 1000056
+
  * Field Name              Field Id
  * - - - - - - - - - - - --------
  * Run ID                 : 1000037
@@ -24,18 +25,22 @@
  * R1 Cycles              : 1000045
  * R2 Cycles              : 1000046
  * Project                : 1000020
+   * Project                : 1000052
+   * Pool                   : 1000053
+   * Samples in Pool        : 1000054
+   * Add to Lane            : 1000055
  * Lane 1 index revcomp   : 1000040
- * Pool                   : 1000024
- * Library                : 1000013
  * Lane 2 index revcomp   : 1000041
  * Lane 3 index revcomp   : 1000042
  * Lane 4 index revcomp   : 1000043
- * Pool                   : 1000028
- * Library                : 1000029
- * Pool                   : 1000030
- * Library                : 1000031
- * Pool                   : 1000032
- * Library                : 1000033
+   * Pool                   : 1000024
+   * Library                : 1000013
+   * Pool                   : 1000028
+   * Library                : 1000029
+   * Pool                   : 1000030
+   * Library                : 1000031
+   * Pool                   : 1000032
+   * Library                : 1000033
  * Investigator           : 1000039
  * Last Update            : 109
 
@@ -184,7 +189,12 @@ function pools_for_projects(projects_list){
     while(asample){
       
       asample_project = asample.getFieldValue(LIST_OF_SAMPLES["Project Name"]);
-      asample_pool = asample.getFieldValue(LIST_OF_SAMPLES["Def Pool Name"]);
+      // For now, if the pool name is blank do I want to...
+      // 1 - Skip this library?
+      // 2 - Add all the pools to NoPool?
+      // 3 - Put each library in its own "pool"?
+      // For now I'll do 2.
+      asample_pool = asample.getFieldValue(LIST_OF_SAMPLES["Def Pool Name"]) || "NoPool";
       
       if(!res[asample_project]) res[asample_project] = {}; 
       res[asample_project][asample_pool] = (res[asample_project][asample_pool] || 0) + 1;
@@ -237,6 +247,10 @@ function add_pool_to_lane(run_entry, pool_project, pool_name, expected_size, lan
   	var sample_query = db.getAPIQuery(LIST_OF_SAMPLES["_path"]);
 	sample_query.addFilter(LIST_OF_SAMPLES["Project Name"], '=', pool_project);
     sample_query.addFilter(LIST_OF_SAMPLES["Def Pool Name"], '=', pool_name);
+    if(pool_name == "NoPool"){
+        // For this special case we also get the entries where Def Pool Name is blank
+        sample_query.addFilter(LIST_OF_SAMPLES["Def Pool Name"], '=', "");
+    }
 	var sample_entries = sample_query.getAPIResultsFull();
     var asample = sample_entries.next()
     while(asample){
@@ -263,7 +277,7 @@ function add_pool_to_lane(run_entry, pool_project, pool_name, expected_size, lan
         row_library = run_entry.getSubtableFieldValue(lane_subtable["_id"], row_idx, lane_subtable["Library"]);
         
       	if(is_in_list(row_library, pool_libraries)){
-         	throw "Trying to add " + row_library + " to " + lane_name + ", but it is already there.\n";
+         	throw "Trying to add library " + row_library + " to " + lane_name + ", but it is already there.\n";
         }
     }
   
@@ -395,3 +409,5 @@ function illumina_run_poolman(){
       	log.println("Not re-generating the pools table as nothing has changed.");
     }
 }
+
+
