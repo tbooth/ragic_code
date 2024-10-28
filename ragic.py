@@ -84,11 +84,15 @@ class RagicClient:
         return self._get_json(listing_page, params)
 
     def get_page(self, sheet, record_id):
-        """Fetch as specific record by ID
+        """Fetch a specific record by ID
         """
         if self.forms:
             sheet = self.forms[sheet]['_form']
         entry_page = self._get_page_url(sheet, record_id)
+
+        # TODO - since I have self.forms I should be able to query with naming=EID
+        # and then convert the codes to names. This makes the API calls robust to
+        # field renaming.
 
         return self._get_json(entry_page)
 
@@ -123,7 +127,7 @@ class RagicClient:
         # as a human-readable HTML page. Ideally we want this as JSON, but scraping it
         # for the field names and numbers is going to be pretty easy. The idea would be that
         # I could then dump the forms dict to a JSON file rather than manually adding it at the
-        # top of the code here.
+        # top of my code.
         url = f"{self.server_url}/sims/doc.jsp"
         params = dict(a=self.account_name)
         req = urllib.request.Request( method = "GET",
@@ -142,7 +146,8 @@ class RagicClient:
     def get_javascript_code(self, sheet, destfile):
         """Grab a copy of the current code for a sheet.
            Actually, this isn't going to work without the session cookie, and without
-           it you just get back a zero byte response, so I'll have to settle for copy/paste.
+           it you just get back a zero byte response, so I'll have to settle for copy/paste
+           to save may changes into GIT.
         """
         # Not sure if this is right?
         sheet_num = sheet.split("/")[-1]
