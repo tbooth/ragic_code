@@ -48,7 +48,7 @@ class RagicClient:
     def connect_with_creds(cls, ini_section="ragic"):
         """Use ~/.ragic_api to connect
         """
-        config = configparser.SafeConfigParser()
+        config = configparser.ConfigParser()
         conf_file = config.read(os.environ.get('RAGICAPIFILE',
                                 [os.path.expanduser('~/.ragic_api'), 'ragic_api.conf']))
 
