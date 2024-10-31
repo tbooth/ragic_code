@@ -177,7 +177,12 @@ function pools_for_projects(projects_list){
                      pool2: size}, ... }
     */
   	var res = {};
-  
+
+    if(projects_list.length == 0){
+       log.println("pools_for_projects called with no projects selected");
+       return res;
+    }
+
     // Strategy here is to make a single query for all samples.
 	var sample_query = db.getAPIQuery(LIST_OF_SAMPLES["_path"]);
     for (var i=0; i < projects_list.length; i++){
