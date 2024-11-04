@@ -67,90 +67,22 @@ var LANE_SUBTABLES = { "Lane 1": {"_id":     1000015,
                                   "Library": 1000031},
                        "Lane 4": {"_id":     1000036,
                                   "Pool":    1000032,
-                                  "Library": 1000033} }
+                                  "Library": 1000033} };
 
 var POOL_SUBTABLE = { "_id": 1000056,
                       "Project": 1000052,
                       "Pool": 1000053,
                       "Samples in Pool": 1000054,
                       "Select": 1000055, // Aka "Add to Lane"
-                      "Select-label": "Select..."}
+                      "Select-label": "Select..."};
 
-
-function scan_lanes(record_id){
-  /* We need debugging messages */
-  log.setToConsole(true); // Display the console block
-  log.println("==========");
-  log.println("running: scan_lanes(" + record_id +" )");
-  
-  // More tinkering - log and db are globals imported from Java with Java.type(),
-  // and as such we can call Java introspection methods on them.
-  /*
-  log.println(typeof log);
-  var m = log.class.getDeclaredMethods();                                                    
-  for (var i = 0; i < m.length; i++){                                                             
-     log.println(m[i].toString());                                                                   
-  } 
-  */
-  // We can say what line we are on.
-  /*
-  log.println("This is code line " + __LINE__);
-  return;
-  */
-  
-  var query = db.getAPIQuery(ILLUMINA_RUN["_path"]);
-  var entry = query.getAPIEntry(record_id);
-  
-  log.println(entry);
-  
-  // we need to get the first row in the fourth subtable
-  
-  // actually, get the size of all the subtables
-  for (var i in LANE_SUBTABLES){
-    var subtable_dict = ALL_LANE_SUBTABLES[i];
-    var subtable_id = subtable_dict["_id"];
-    log.println("Looking at " + i + " = " + subtable_id);
-    
-    var total_entries = entry.getSubtableSize(subtable_id);
-    log.println("Total entries " + total_entries);
-    
-    // Seems that row IDs for this function are zero indexed
-  	var first_row = entry.getSubtableRootNodeId(subtable_id, 0);
-  	log.println("First row nodeid is " + first_row);
-    var last_row = entry.getSubtableRootNodeId(subtable_id, total_entries-1);
-    log.println("Last row nodeid is " + last_row);
-  }
-
-  // And finally, how to raise an alert with an exception?
-  throw "Something awful happened\n";
-  // Or I can use showMsg(), apparently.
-}
-
-function add_pool(record_id){
-  //
-  // DELETEME - This is now being implemented in illumina_run_poolman()
-  //
-  
-  /* We need debugging messages */
-  log.setToConsole(true); // Display the console block
-  log.println("==========");
-  log.println("running: add_pool(" + record_id +" )");
-  
-  
-  var query = db.getAPIQuery(ILLUMINA_RUN["_path"]);
-  var entry = query.getAPIEntry(record_id);
-
-  // Add the two cells separately. Note that these setters do not return a value.
-  entry.setSubtableFieldValue(LANE_SUBTABLES['Lane 4']['Pool'], -1, "test_pool");
-  entry.setSubtableFieldValue(LANE_SUBTABLES['Lane 4']['Library'], -1, "33472TD00001L01"); 
-  log.println(entry.save().getMessage());  // Should be ' '
-}
 
 function clear_all(record_id){
-  /* Clear all the entries in all the lanes */  
-  log.setToConsole(true); // Choose if we display the console block
+  /* Clear all the entries in all the lanes
+   */  
+  //log.setToConsole(true); // Uncomment this to display the console block
   log.println("==========");
-  log.println("running: clear_all(" + record_id +" )");
+  log.println("running: clear_all(" + record_id +")");
 
   var entry = db.getAPIQuery(ILLUMINA_RUN["_path"]).getAPIEntry(record_id);
   
@@ -169,20 +101,20 @@ function clear_all(record_id){
 
 function pools_for_projects(projects_list){
     /* For each projects in projects_list,
-       get all the samples (libraries) for the project and build a data structure like this
-       
-       { project1: { pool1: size,
-                     pool2: size},
-         project2: { pool1: size,
-                     pool2: size}, ... }
-    */
+     * get all the samples (libraries) for the project and build a data structure like this
+     * 
+     * { project1: { pool1: size,
+     *               pool2: size},
+     *   project2: { pool1: size,
+     *               pool2: size}, ... }
+     */
   	var res = {};
-
+  
     if(projects_list.length == 0){
        log.println("pools_for_projects called with no projects selected");
        return res;
     }
-
+  
     // Strategy here is to make a single query for all samples.
 	var sample_query = db.getAPIQuery(LIST_OF_SAMPLES["_path"]);
     for (var i=0; i < projects_list.length; i++){
@@ -213,10 +145,14 @@ function pools_for_projects(projects_list){
 
 function select_to_lanes(select_val){
  	/* Translates one of the dropdown values in the Add Pools subtable into a
-       list of lanes into which the pool should be added. Always returns an array.
-    */
+     * list of lanes into which the pool should be added. Always returns an array.
+     */
     if(select_val == "All Lanes"){
       	return Object.keys(LANE_SUBTABLES);
+    }
+    else if(select_val == "Lanes 1 and 2"){
+        // Special case because this is very common
+        return ["Lane 1", "Lane 2"];
     }
   	else if(select_val.substring(0,5) == "Lane "){
   		return [select_val];
@@ -227,8 +163,8 @@ function select_to_lanes(select_val){
 
 function is_in_list(x, alist){
     /* See if x is present in array alist.
-       I'm likely recreating something that already exists, but never mind.
-    */
+     * I'm likely recreating something that already exists, but never mind.
+     */
     for (var i=0; i < alist.length; i++){
       	if(alist[i] == x) return true;
     }
@@ -237,13 +173,13 @@ function is_in_list(x, alist){
 
 function add_pool_to_lane(run_entry, pool_project, pool_name, expected_size, lane_name, new_row_idx){
 	/* Adds a specified pool to a specified lane.
-   
-       1 - Fetch the list of libraries in the specified pool.
-       2 - Sanity check the pool size matches
-       3 - Sanity check the project is still in the list of projects for this run
-       4 - Sanity check adding a sample twice
-       5 - I we good, add the libraries to the actual subtable
-    */
+     *  
+     * 1 - Fetch the list of libraries in the specified pool.
+     * 2 - Sanity check the pool size matches
+     * 3 - Sanity check the project is still in the list of projects for this run
+     * 4 - Sanity check adding a sample twice
+     * 5 - I we good, add the libraries to the actual subtable
+     */
   	var lane_subtable = LANE_SUBTABLES[lane_name];
     var lane_subtable_len = run_entry.getSubtableSize(lane_subtable["_id"]);
     
@@ -305,13 +241,13 @@ function add_pool_to_lane(run_entry, pool_project, pool_name, expected_size, lan
 
 function illumina_run_poolman(){
   	/* This function implements the "Add pools to lanes" feature, by looking
-       to see which (if any) pools were selected and adding them to the appropriate
-       lanes.
-       It will then re-generate the table of pools based upon the list of projects
-       selected for the run.
-       ** The example at https://www.ragic.com/intl/en/doc/15/javascript-workflow-engine#5
-       ** is pertinent!
-    */
+     * to see which (if any) pools were selected and adding them to the appropriate
+     * lanes.
+     * It will then re-generate the table of pools based upon the list of projects
+     * selected for the run.
+     * ** The example at https://www.ragic.com/intl/en/doc/15/javascript-workflow-engine#5
+     * ** is pertinent!
+     */
 
   	// 1 - get the just-saved record
     var run_entry = param.getUpdatedEntry();
