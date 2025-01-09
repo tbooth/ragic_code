@@ -5,12 +5,19 @@ import urllib.request
 import configparser
 import json
 import shutil
-from pprint import pprint
+from pprint import pprint, pformat
+
+import logging
+L = logging.getLogger(__name__)
 
 # Basic client for the Ragic API - see
 # https://github.com/ragic/public/blob/master/HTTP%20API%20Sample/Python-Sample/read.py
+# This client has no extra dependencies - just Py3 standard lib
 
 class RequestError(RuntimeError):
+    pass
+
+class EmptyResultError(RuntimeError):
     pass
 
 class RagicClient:
@@ -58,10 +65,12 @@ class RagicClient:
         return cls(res['server']).connect( account_name = res['account'],
                                            api_key = res['key'] )
 
-    def list_entries(self, sheet, query=None):
+    def list_entries(self, sheet, query=None, subtables=True, latest_n=None):
         """Search for entries by query.
            Query may be a list of '{field},{op},{val}' strings, where
            field may be the ID or else the name of the field in the forms dict.
+
+           latest_n only returns the N most recently updated records, newest first.
         """
         sheet_info = None
         if self.forms:
@@ -80,6 +89,13 @@ class RagicClient:
                           for q in query ]
 
             params['where'] = query
+        if not subtables:
+            params['subtables'] = '0'
+
+        if latest_n:
+            # Used to obtain only the N most recent records
+            params['limit'] = str(latest_n)
+            params['order'] = f"{sheet_info['_date_field']},DESC"
 
         return self._get_json(listing_page, params)
 

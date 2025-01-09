@@ -5,9 +5,46 @@ from urllib.parse import quote as url_quote
 import logging as L
 
 import yaml
+from ragic import RagicClient
 
-from illuminatus.SampleSheetReader import SampleSheetReader
-from illuminatus.RTQuery import get_project_names
+class SampleSheetReader:
+    """Very minimal sample sheet reader
+    """
+    def __init__(self, filename):
+
+        self.samplesheet_data = []
+
+        with open(filename) as fh:
+            self.add_data_lines(fh)
+
+    def add_data_lines(fh):
+        """Consume lines from fh and add to self.samplesheet_data, one dict per line
+        """
+        found_data_header = False
+        column_headings = None
+
+        for aline in fh:
+            # No need for CSV quoting/handling
+            aline = aline.strip().split(",")
+
+            if not aline:
+                # Ingnore all blanks
+                continue
+
+            if not column_headings and aline[0] == "[Data]":
+                found_data_header = True
+                continue
+
+            if not found_data_header:
+                # Keep looking
+                continue
+
+            if not column_headings:
+                column_headings = [h.lower() for h in aline]
+                continue
+
+            self.samplesheet_data.append( dict(zip(column_headings, aline)) )
+
 
 def main(args):
     L.basicConfig(level = L.WARNING)
@@ -20,12 +57,13 @@ def main(args):
     proj_numbers = set(args.proj_numbers)
 
     if args.sample_sheet:
+        # Get the project names from an Illumina sample sheet
         # Allow any exceptions to propagate. This means if the sample
         # sheet is invalid no YAML file will be saved.
         ss_csv = SampleSheetReader(args.sample_sheet)
 
         for line in ss_csv.samplesheet_data:
-            proj_numbers.add(line[ss_csv.column_mapping['sample_project']])
+            proj_numbers.add(line['sample_project'])
 
     # See what projects are in proj_numbers that we still need info for
     projects_already_known = set()
@@ -76,7 +114,13 @@ def main(args):
         dump_yaml(yaml_data, filename=args.yaml, mode="x")
     elif not args.update:
         # Just print the result
-        dump_yaml(yaml_data, fh=sys.stdout)
+        if args.text:
+            for v in yaml_data.values():
+                # Ignore errors - just print wht we have
+                if not v.get('error'):
+                    print(v['name'])
+        else:
+            dump_yaml(yaml_data, fh=sys.stdout)
 
 def is_special_name(project_name):
     """Names that we treat specially
@@ -149,10 +193,9 @@ def project_real_names(proj_id_list, name_list=''):
                 res[p] = dict( name = p + "_UNKNOWN",
                                error = "not listed in PROJECT_NAME_LIST" )
     else:
-        # Go to RT. The current query mode hits the database as configured
-        # by ~/.rt_settings and looks for tickets in the eg-projects queue.
+        # Go to Ragic. We want to query everything in one go.
         try:
-            for p, n in zip(proj_id_list, get_project_names(*proj_id_list)):
+            for p, n in get_project_names_from_ragic(proj_id_list).items():
                 if n:
                     res[p] = dict( name = n )
                 else:
@@ -164,6 +207,35 @@ def project_real_names(proj_id_list, name_list=''):
                 if p not in res:
                     res[p] = dict( name = p + "_LOOKUP_ERROR",
                                    error = repr(e) )
+
+    return res
+
+def get_project_names_from_ragic(pnum_list):
+    """Connect to the Ragic and translate one or more project names.
+    """
+    rc = RagicClient.connect_with_creds()
+    rc.add_forms( { 'Sequencing Project': { '_form': "sequencing/1",
+                                            'Project Number': "1000001",
+                                          } } )
+
+    # re-format
+    pnum_list_f = ["{:05d}".format(int(pnum)) for pnum in pnum_list]
+
+    # Query on "Sequencing Project" by "Project Number". No need to specify the project
+    # type, I think, but it should be "Illumina".
+    query_list = [ f"Project Number,eq,{pnum}" for pnum in pnum_list_f ]
+    projects = rc.list_entries("Sequencing Project", query_list)
+    projects = sorted(projects.values(), key=lambda p: int(p['_ragicId']))
+
+    # I need to return a dict of project names with the keys from pnum_list
+    res = {}
+    for pnum, pnum_f in zip(pnum_list, pnum_list_f):
+        matching_projects = [ p for p in projects if p['Project Number'] == pnum_f ]
+
+        if not matching_projects:
+            L.warning(f"No Ragic entry found for {pnum_f!r}")
+        else:
+            res[pnum] = matching_projects[-1]['Project Name']
 
     return res
 
@@ -185,8 +257,11 @@ def parse_args(*args):
     a.add_argument("--project_page_url",
                    help="Template for making URL links to projects. May contain a single"
                         " {} placeholder or else the project name will be appended")
+    a.add_argument("-t", "--text", action="store_true",
+                   help="Only print the unadorned project names. The info saved to the YAML"
+                        " file will not be affected")
     a.add_argument("--yaml",
-                   help="File to read for previously retrieved project names.")
+                   help="File to read for previously retrieved project names")
     a.add_argument("--update", action="store_true",
                    help="Save new info back to the JSON file")
     a.add_argument("--fetchall", action="store_true",
