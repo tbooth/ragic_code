@@ -17,7 +17,7 @@ class SampleSheetReader:
         with open(filename) as fh:
             self.add_data_lines(fh)
 
-    def add_data_lines(fh):
+    def add_data_lines(self, fh):
         """Consume lines from fh and add to self.samplesheet_data, one dict per line
         """
         found_data_header = False
@@ -200,7 +200,7 @@ def project_real_names(proj_id_list, name_list=''):
                     res[p] = dict( name = n )
                 else:
                     res[p] = dict( name = p + "_UNKNOWN",
-                                   error = "not listed in RT" )
+                                   error = "not listed in Ragic" )
         except Exception as e:
             # Deals with general connection failures etc.
             for p in proj_id_list:
@@ -234,6 +234,7 @@ def get_project_names_from_ragic(pnum_list):
 
         if not matching_projects:
             L.warning(f"No Ragic entry found for {pnum_f!r}")
+            res[pnum] = None
         else:
             res[pnum] = matching_projects[-1]['Project Name']
 
