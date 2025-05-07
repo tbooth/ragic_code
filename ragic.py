@@ -219,7 +219,7 @@ class RagicClient:
         """
         params = self._encode_params(params)
 
-        headers = {'Content-Type': 'application/json'};
+        headers = {'Content-Type': 'application/json'}
         req = urllib.request.Request( method = "POST",
                                       url = f"{url}?{params}",
                                       headers = self._get_headers(**headers) )
